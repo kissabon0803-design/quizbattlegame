@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>完全自動AIモード搭載オンラインクイズ</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f2f5; padding: 20px; color: #333; margin: 0; }
+        .container { max-width: 600px; margin: 20px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); position: relative; }
+        h1 { font-size: 1.5rem; color: #2c3e50; margin-top: 0; }
+        
+        .leave-btn { position: absolute; top: 20px; right: 20px; padding: 6px 12px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.85rem; }
+        .leave-btn:hover { background: #c0392b; }
+
+        .status { font-size: 1.2rem; font-weight: bold; margin: 15px 0; padding: 15px; border-radius: 8px; }
+        .status.ready { background: #fff3e0; color: #e65100; }
+        .status.wait { background: #e3f2fd; color: #0d47a1; }
+        .status.answering { background: #ffebee; color: #c62828; }
+        .status.correct-banner { background: #e8f5e9; color: #2e7d32; border: 2px solid #4caf50; font-size: 1.4rem; padding: 20px; }
+        .status.wrong-banner { background: #ffebee; color: #c62828; border: 2px solid #ef5350; font-size: 1.4rem; padding: 20px; }
+        
+        .timer-box { font-size: 2rem; font-weight: bold; color: #e74c3c; margin: 10px 0; display: none; }
+        .quiz-display { background: #2c3e50; color: white; padding: 20px; border-radius: 8px; font-size: 1.3rem; font-weight: bold; min-height: 50px; margin: 15px 0; display: flex; align-items: center; justify-content: center; text-align: left; white-space: pre-wrap; }
+        
+        .push-btn {
+            width: 180px; height: 180px; border-radius: 50%; border: none;
+            background: #e74c3c; color: white; font-size: 1.6rem; font-weight: bold;
+            cursor: pointer; box-shadow: 0 8px #c0392b; transition: all 0.1s; margin: 20px 0;
+        }
+        .push-btn:active { transform: translateY(4px); box-shadow: 0 4px #c0392b; }
+        .push-btn:disabled { background: #bdc3c7; box-shadow: 0 8px #95a5a6; cursor: not-allowed; transform: none; }
+
+        .scoreboard { background: #f8f9fa; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin: 15px 0; text-align: left; }
+        .scoreboard h4 { margin: 0 0 8px 0; color: #4a5568; font-size: 0.95rem; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+        .score-grid { display: block; max-height: 150px; overflow-y: auto; font-size: 0.85rem; }
+        .score-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
+
+        .panel { background: #fdfdfd; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: left; }
+        .panel h3 { margin-top: 0; font-size: 1rem; color: #666; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .input-row { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .checkbox-row { margin-bottom: 10px; display: flex; align-items: center; gap: 8px; font-weight: bold; color: #2c3e50; }
+        input, select, textarea { padding: 8px; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; flex: 1; }
+        input[type="checkbox"] { flex: none; width: 20px; height: 20px; }
+        
+        .btn { padding: 10px 20px; font-size: 1rem; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; }
+        .btn-start { background: #3498db; width: 100%; margin-top: 10px; }
+        .btn-ai { background: #9b59b6; width: 100%; margin-top: 10px; font-size: 1.1rem; }
+        .btn-reset { background: #95a5a6; }
+        .btn-submit { background: #e67e22; }
+        .btn-correct { background: #2ecc71; flex: 1; padding: 15px; font-size: 1.2rem; }
+        .btn-wrong { background: #e74c3c; flex: 1; padding: 15px; font-size: 1.2rem; }
+        .judge-box { display: flex; gap: 10px; margin-top: 10px; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <button id="leave-room-btn" class="leave-btn hidden">🚪 退室</button>
+    <h1 id="title-text">🔥 オンラインクイズシステム</h1>
+    
+    <div class="panel" id="room-setup-panel">
+        <h3>🔒 部屋の設定（共通キーワード）</h3>
+        <div class="input-row"><label>部屋名 (ルームID):</label><input type="text" id="room-id" value="room1"></div>
+        <div class="input-row"><label>部屋のパスワード:</label><input type="text" id="room-pass" value="1234"></div>
+        <div class="input-row"><label>あなたの名前:</label><input type="text" id="username" value="プレイヤー1"></div>
+        <div class="checkbox-row">
+            <input type="checkbox" id="is-host-check">
+            <label for="is-host-check">👑 ホストとして部屋を作成、または入る</label>
+        </div>
+        <button class="btn btn-start" id="connect-btn">この部屋に入る</button>
+    </div>
+
+    <div id="game-area" class="hidden">
+        <div class="quiz-display" id="quiz-text">ホストが出題するのをお待ちください...</div>
+        <div id="timer-box" class="timer-box">⏱️ 残り <span id="timer-count">10</span> 秒</div>
+        <div id="status-box" class="status ready">待機中...</div>
+
+        <div class="scoreboard">
+            <h4>📊 スコアボード (総合ポイント / 正解 / 間違い)</h4>
+            <div id="score-rows" class="score-grid"></div>
+        </div>
+
+        <div id="play-interactive-area">
+            <button id="buzzer" class="push-btn" disabled>PUSH!!</button>
+
+            <div class="panel hidden" id="answer-panel">
+                <h3>✍️ あなたに解答権があります！10秒以内に答えを入力してください</h3>
+                <div class="input-row">
+                    <input type="text" id="text-answer" placeholder="ここに答えを記述">
+                    <button class="btn btn-submit" id="submit-answer-btn">送信</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="host-view" class="hidden" style="margin-top: 30px;">
+            <div class="panel hidden" id="host-judge-panel" style="border: 3px solid #e67e22; background: #fff5e6;">
+                <h3 style="color:#d35400; font-weight: bold;">⚖️ ホスト専用：手動回答の採点</h3>
+                <div style="font-size: 1.1rem; margin-bottom: 10px;">
+                    解答者: <span id="judge-player-name" style="font-weight: bold; color: #2c3e50;">-</span><br>
+                    回答内容: <span id="judge-player-answer" style="font-size: 1.3rem; font-weight: bold; color: #c0392b;">-</span>
+                </div>
+                <div class="judge-box">
+                    <button class="btn btn-correct" id="host-correct-btn">⭕ 正解判定にする</button>
+                    <button class="btn btn-wrong" id="host-wrong-btn">❌ 不正解判定にする</button>
+                </div>
+            </div>
+
+            <div class="panel" style="border: 2px solid #9b59b6; background: #f5eef8;">
+                <h3 style="color:#8e44ad;">🤖 AIおまかせ自動出題モード</h3>
+                <button class="btn btn-ai" id="ai-start-btn">✨ AIに問題を選んでもらう（完全自動ループ）</button>
+            </div>
+
+            <div class="panel" style="border: 2px dashed #3498db; background: #ecf0f1;">
+                <h3 style="color:#2980b9;">👤 通常の手動出題</h3>
+                <div class="input-row">
+                    <label>問題文入力:</label>
+                    <textarea id="custom-quiz-text" rows="2" placeholder="手動で問題文を入力できます"></textarea>
+                </div>
+                <div class="input-row">
+                    <label>想定する正解（任意）:</label>
+                    <input type="text" id="custom-quiz-answer" placeholder="全員不正解時の正解表示用（例：織田信長）">
+                </div>
+                <button class="btn btn-start" id="start-btn">📢 この問題を出題（ボタン有効化）</button>
+            </div>
+            
+            <button class="btn btn-reset" id="reset-btn" style="width:100%;">🔄 強制終了してリセット</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, updateDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDsIkGlEC5I-_svZIFP4wxkwB3r9yivhUw",
+        authDomain: "quiz-aa174.firebaseapp.com",
+        projectId: "quiz-aa174",
+        storageBucket: "quiz-aa174.firebasestorage.app",
+        messagingSenderId: "196097038023",
+        appId: "1:196097038023:web:ab171d3a3860cc5ab550e2",
+        measurementId: "G-TM1SXYDTB2"
+    }; 
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    
+    let roomRef = null;
+    let myName = "";
+    let isHost = false;
+    let timerId = null;
+    let unsubscribeRoom = null;
+
+    // 🤖 AI用のクイズデータベース
+   const aiQuizDatabase = [
+        // --- 📖 国語 ---
+        { q: "【国語】「情けは人のためならず」の本来の正しい意味は、「人のためではなく、巡り巡って（誰）のためになる」でしょう？", a: ["自分", "じぶん"] },
+        { q: "【国語】ことわざ「犬も歩けば何に当たる」？", a: ["棒", "ぼう"] },
+        { q: "【国語】四字熟語「孤立無〇」。〇に入る漢字1文字は何でしょう？", a: ["援"] },
+        { q: "【国語】「おもむろに」という言葉の本来の正しい意味は、「（どう）動く様子」でしょう？", a: ["ゆっくり", "不意にではない", "遅く"] },
+        { q: "【国語】夏目漱石の代表作で、愛媛県の中学校に赴任した数学教師が主人公の小説のタイトルは何でしょう？", a: ["坊っちゃん", "坊ちゃん", "ぼっちゃん"] },
+        { q: "【国語】漢字の「つくり」の名称。偏（へん）が左側なら、右側の部分を何というでしょう？", a: ["つくり", "旁"] },
+        // --- 📐 数学 ---
+        { q: "【数学】一次方程式 3x - 7 = 8 を解いたとき、 x の値は何でしょう？", a: ["5", "５"] },
+        { q: "【数学】普通のサイコロを1回振るとき、偶数（ぐうすう）の目が出る確率は「何分の1」でしょう？（数字で）", a: ["1/2", "２分の１", "0.5"] },
+        { q: "【数学】三角形の内角の和は、全部で何度でしょう？（「度」は不要）", a: ["180"] },
+        { q: "【数学】円の面積を求める公式は、「半径 × 半径 × （何）」でしょう？（カタカナか漢字で）", a: ["円周率", "パイ", "エンシュウリツ"] },
+        { q: "【数学】 x の値が2倍、3倍になると、それに伴って y の値も2倍、3倍になる関係を何というでしょう？", a: ["比例", "ひれい"] },
+        { q: "【数学】もっとも小さい「素数（そすう）」は何でしょう？", a: ["2", "２"] },
+        // --- 🔤 英語 ---
+        { q: "【英語】「12月」を意味する英単語は何でしょう？（カタカナか英語で）", a: ["December", "ディセンバー", "でぃせんばー"] },
+        { q: "【英語】「科学、理科」を意味する英単語は何でしょう？（英語で）", a: ["science", "Science"] },
+        { q: "【英語】「私は昨日、その本を読みました」の空欄に入る動詞の過去形は？ I ( ) the book yesterday.", a: ["read", "Read"] },
+        { q: "【英語】「～へ行く」の go の過去形は何でしょう？", a: ["went", "Went"] },
+        { q: "【英語】「リンゴ（apple）」の前に付ける冠詞は、 a ではなく何でしょう？", a: ["an", "An"] },
+        { q: "【英語】「こんにちは」や「もしもし」の挨拶で使われる、Hから始まる英単語は何でしょう？", a: ["hello", "Hello", "ハロー"] },
+        // --- 🌍 社会 ---
+        { q: "【社会】1603年に江戸幕府を開き、初代将軍となった歴史上の人物は誰でしょう？", a: ["徳川家康", "とくがわいえやす", "徳川 家康"] },
+        { q: "【社会】日本で一番北にある、北方領土にも含まれる島は何島でしょう？", a: ["探捉島", "えとろふ", "エトロフ"] },
+        { q: "【社会】日本の都道府県の中で、一番面積が大きいのはどこでしょう？", a: ["北海道", "ほっかいどう"] },
+        { q: "【社会】日本武尊（ヤマトタケル）や聖徳太子の時代など、日本の古代の政治の中心地となった現在の奈良県付近の旧地域名は何でしょう？", a: ["飛鳥", "あすか", "奈良"] },
+        { q: "【社会】フランスの首都はどこでしょう？", a: ["パリ", "Paris", "ぱり"] },
+        { q: "【社会】世界で一番広い面積を持つ国はどこでしょう？", a: ["ロシア", "ろしあ"] },
+        // --- 🧪 理科 ---
+        { q: "【理科】植物が光を受けて、二酸化炭素と水からデンプンと酸素を作り出す働きを何というでしょう？", a: ["光合成", "こうごうせい"] },
+        { q: "【理科】地球の周りを公転している、地球にとって唯一の「自然の衛星」は何でしょう？", a: ["月", "つき"] },
+        { q: "【理科】「水」を化学式で表すと何でしょう？（大文字・小文字どちらでも可）", a: ["H2O", "h2o"] },
+        { q: "【理科】人間の体の中で、血液を全身に送り出すポンプの役割をしている臓器は何でしょう？", a: ["心臓", "しんぞう"] },
+        { q: "【理科】地震の揺れの大きさを0～7の10段階で表した指標を何というでしょう？", a: ["震度", "しんど"] },
+        { q: "【理科】昆虫の体は、頭部、胸部、あともう一つは何部でできているでしょう？", a: ["腹部", "ふくぶ", "はら"] },
+        // === 追加分：国数英社理 ＋ 常識問題（40問） ===
+        { q: "【国語】「五月雨」と書いて、なんと読むでしょう？", a: ["さみだれ", "サミダレ"] },
+        { q: "【国語】小説『走れメロス』の作者は誰でしょう？", a: ["太宰治", "だざいおさむ", "太宰 治"] },
+        { q: "【国語】「一石二鳥」と同じように、1つの行動で2つの利益を得ることを意味する四字熟語は「一挙両（何）」でしょう？", a: ["得"] },
+        { q: "【国語】「敷居が高い」の本来の意味は、「不義理や合わせる顔がない（何）があって、その人の家に行きにくい」でしょう？", a: ["事情", "こと", "理由", "ワケ", "わけ"] },
+        { q: "【国語】「ほくそ笑む」とは、思い通りになったことに満足して、どのように笑うことでしょう？", a: ["一人で笑う", "ひそかに笑う", "にやりとする", "ニヤリ", "密かに"] },
+        { q: "【国語】文章の最後につける点「。」の正式名称は何でしょう？", a: ["句点", "くてん"] },
+        { q: "【数学】 -5 + (-8) の計算結果は何でしょう？", a: ["-13", "－１３"] },
+        { q: "【数学】直角三角形で、一番長い辺の長さを c 、他の2辺を a, b としたとき、 a^2 + b^2 = c^2 が成り立つ定理を「何（誰）の定理」というでしょう？", a: ["三平方の定理", "ピタゴラスの定理", "三平方", "ピタゴラス"] },
+        { q: "【数学】サイコロを1回振るとき、「7の目」が出る確率はいくらでしょう？", a: ["0", "なし", "ゼロ"] },
+        { q: "【数学】 1000 円の商品の「1割引」の価格はいくらでしょう？（数字のみで）", a: ["900", "９００"] },
+        { q: "【数学】円周の長さを求める公式は、「直径 × （何）」でしょう？", a: ["円周率", "パイ", "エンシュウリツ"] },
+        { q: "【数学】数直線の基準となる「0」の点を、漢字1文字で何というでしょう？", a: ["原点", "げんてん"] },
+        { q: "【英語】「水曜日」を意味する英単語は何でしょう？（英語かカタカナで）", a: ["Wednesday", "ウェンズデー", "うぇんずでー"] },
+        { q: "【英語】「～が欲しい」という意味の、Wから始まる4文字の動詞は何でしょう？", a: ["want", "Want"] },
+        { q: "【英語】「美しい」を意味する英単語「beautiful」の比較級を作る際、前に付ける単語は何でしょう？", a: ["more", "More"] },
+        { q: "【英語】「私はテニスが好きです」 I ( ) tennis. 空欄に入る最も一般的な単語は何でしょう？", a: ["like", "Like"] },
+        { q: "【英語】「学校」を意味する英単語は何でしょう？", a: ["school", "School", "スクール"] },
+        { q: "【英語】「～を食べる（eat）」の過去形は何でしょう？", a: ["ate", "Ate"] },
+        { q: "【社会】日本の現在の内閣総理大臣（首相）は誰でしょう？（苗字のみでも可）", a: ["石破", "いしば", "石破茂"] },
+        { q: "【社会】織田信長が明智光秀に襲われて自害した、京都にあるお寺の名前は何でしょう？", a: ["本能寺", "ほんのうじ"] },
+        { q: "【社会】日本の都道府県の中で、一番人口が多いのはどこでしょう？", a: ["東京都", "とうきょう", "東京"] },
+        { q: "【社会】アメリカ合衆国の首都はどこでしょう？", a: ["ワシントン", "ワシントンD.C.", "わしんとん"] },
+        { q: "【社会】世界で一番長い川は何川でしょう？", a: ["ナイル川", "ナイル", "ないる"] },
+        { q: "【社会】日本の国会は「衆議院」ともう一つは何議院でしょう？", a: ["参議院", "さんぎいん"] },
+        { q: "【理科】液体の性質で、pHが7未満（小さい）のときを何性というでしょう？", a: ["酸性", "さんせい"] },
+        { q: "【理科】二酸化炭素を発生させる実験で、石灰石に何をかけると発生するでしょう？", a: ["塩酸", "えんさん"] },
+        { q: "【理科】植物の葉の裏などに多くあり、気体の出入り口や水蒸気の出口になっている小さな穴を何というでしょう？", a: ["気孔", "きこう"] },
+        { q: "【理科】理科の実験で、液体の体積を正確に測るために使う目盛りのついたガラスの筒を何というでしょう？", a: ["メスシリンダー", "めすしりんだー"] },
+        { q: "【理科】雲から降ってくる水滴が、地上に届く前に凍って、直径5ミリ以上の氷の粒になって降ってくる現象を何というでしょう？", a: ["雹", "ひょう", "ヒョウ"] },
+        { q: "【理科】水が沸騰して気体になったものを何というでしょう？", a: ["水蒸気", "すいじょうき"] },
+        { q: "【常識】オリンピックのシンボルマークに描かれている輪の数はいくつでしょう？", a: ["5", "５", "5つ"] },
+        { q: "【常識】現在の日本国憲法が施行された「憲法記念日」は何月何日でしょう？（例：1月1日）", a: ["5月3日", "５月３日"] },
+        { q: "【常識】信号機の色の並び。縦型の信号機の場合、一番「上」にあるのは何色でしょう？", a: ["赤", "赤色", "あか"] },
+        { q: "【常識】「春の七草」の1つで、大根（だいこん）の古名（昔の呼び名）は何でしょう？", a: ["すずしろ", "スズシロ", "清白"] },
+        { q: "【常識】日本の1万円札の肖像画に新しく選ばれた、日本の実業家は誰でしょう？", a: ["渋沢栄一", "しぶさわえいいち", "渋沢 栄一"] },
+        { q: "【常識】2月29日が存在する、4年に1度訪れる年のことを何というでしょう？", a: ["うるう年", "閏年", "うるうどし"] },
+        { q: "【常識】世界三大珍味といえば、キャビア、フォアグラ、あと一つは何でしょう？", a: ["トリュフ", "とりゅふ"] },
+        { q: "【常識】日本の最高裁判所の長官は、誰によって指名（任命）されるでしょう？", a: ["天皇", "てんのう"] },
+        { q: "【常識】ことわざ「親の（何）を見て子は育つ」？", a: ["背中", "せなか"] },
+        { q: "【常識】将棋の盤面は、縦・横それぞれ何マスずつあるでしょう？（数字のみで）", a: ["9", "９"] },
+        // === さらにさらに追加分：基礎〜入試・雑学（50問） ===
+        { q: "【国語】芥川龍之介の小説で、お釈迦様が地獄にいる大泥棒「カンダタ」に蜘蛛の糸を垂らすお話のタイトルは何でしょう？", a: ["蜘蛛の糸", "くものいと"] },
+        { q: "【国語】「他山（たざん）の石」とは、他人の誤った言動であっても、自分の（何）の参考になるという意味でしょう？", a: ["修養", "自分のみがき", "反省", "参考", "勉強"] },
+        { q: "【国語】「うだつが上がらない」の「うだつ」とは、元々何（建築物）に取り付けられた防火壁のことでしょう？", a: ["家", "町家", "民家", "屋根"] },
+        { q: "【国語】「月並み（つきなみ）」という言葉は、本来「毎月決まって行うこと」という意味ですが、現代では「（どう）で平凡なこと」という意味で使われるでしょう？", a: ["ありきたり", "平凡", "普通", "ベタ"] },
+        { q: "【国語】『枕草子』の冒頭で、「春は（どこ）」と書かれているでしょう？（ひらがな4文字）", a: ["あけぼの", "曙"] },
+        { q: "【国語】「耳を揃える」とは、借金を返す際にお金を（どういう状態）にして全額支払うことでしょう？", a: ["不足なく", "全額", "きちんと", "そろえて"] },
+        { q: "【国語】「五月蠅い」という漢字は、なんと読むでしょう？", a: ["うるさい", "ウルサイ"] },
+        { q: "【国語】漢文を読む際、読む順番を「下から上」へと戻すために使う記号を「（何）点」というでしょう？", a: ["レ", "レ点"] },
+        { q: "【国語】人間関係を断ち切ることを、衣服のパーツを使って「（どこ）を分かつ」というでしょう？", a: ["袂", "たもと"] },
+        { q: "【国語】文章の中で、主語に対して「どうする」「どんなだ」などを説明する成分を何というでしょう？", a: ["述語", "じゅつご"] },
+        { q: "【数学】ある数 x を2乗すると a になるとき、 x を a の「（何）根」というでしょう？", a: ["平方根", "heihoukon", "へいほうこん"] },
+        { q: "【数学】 √2 （ルート2）の近似値の覚え方。「ひとのよに（何）ひとよごろ」？", a: ["ひとみ", "ヒトミ", "人見"] },
+        { q: "【数学】 x 軸と y 軸が交わる、座標 (0, 0) の点を何というでしょう？", a: ["原点", "げんてん"] },
+        { q: "【数学】円錐（えんすい）の体積は、同じ底面積と高さを持つ円柱の体積の「何分の1」でしょう？（数字で）", a: ["1/3", "３分の１"] },
+        { q: "【数学】 2, 3, 5, 7, 11 のように、1とその数自身でしか割り切れない2以上の自然数を何というでしょう？", a: ["素数", "そすう"] },
+        { q: "【数学】確率で、ある事象 A が「起こらない確率」を求める際、全体である「1」から引く対象となる確率を「（何）確率」というでしょう？", a: ["余事象", "よじしょう"] },
+        { q: "【数学】多角形において、隣り合わない頂点を結んだ直線のことを「（何）角線」というでしょう？", a: ["対", "対角線"] },
+        { q: "【数学】 y = ax^2 のグラフが描く曲線の名前を何というでしょう？", a: ["放物線", "ほうぶつせん"] },
+        { q: "【数学】「 A ならば B である」に対して、「 B ならば A である」とすることを、元の命題の「（何）」というでしょう？", a: ["逆", "ぎゃく"] },
+        { q: "【数学】五角形の内角の和は、全部で何度でしょう？（「度」は不要）", a: ["540"] },
+        { q: "【英語】「彼（he）」の目的格（～を、～に）は何でしょう？（すべて小文字で）", a: ["him"] },
+        { q: "【英語】「～の間に」を意味する、Bから始まる7文字の英単語は何でしょう？", a: ["between", "Between"] },
+        { q: "【英語】「昨日（yesterday）」の対義語で、「明日」を意味する英単語は何でしょう？", a: ["tomorrow", "Tomorrow", "トゥモロー"] },
+        { q: "【英語】「ナイフ（knife）」を複数形にする際、末尾のfeを何に変えてsを付けるでしょう？（小文字で）", a: ["ve"] },
+        { q: "【英語】「朝食（breakfast）」という単語は、「断食（fast）を（どうする）」という意味から来ているでしょう？", a: ["破る", "終わらせる", "やめる", "ブレイク"] },
+        { q: "【英語】「私は忙しすぎてテレビを見ることができない」 I am ( ) busy to watch TV. 空欄に入る3文字の単語は何でしょう？", a: ["too", "Too"] },
+        { q: "【英語】「商（water）」のように、1つ2つと数えることができない名詞を「（何）名詞」というでしょう？", a: ["不可算名詞", "不可算"] },
+        { q: "【英語】「興味がある」という熟語。 be interested ( ) の空欄に入る2文字の前置詞は何でしょう？", a: ["in", "In"] },
+        { q: "【英語】「～を買う（buy）」の過去形は何でしょう？", a: ["bought", "Bought"] },
+        { q: "【英語】英語のアルファベットの「子音（しいん）」に対して、a, i, u, e, o の5文字を「（何）音」というでしょう？", a: ["母音", "ぼいん"] },
+        { q: "【社会】1867年、江戸幕府第15代将軍の徳川慶喜が政権を天皇に返上した歴史的出来事を何というでしょう？", a: ["大政奉還", "たいせいほうかん"] },
+        { q: "【社会】日本で最も人口が少ない鳥取県にある、日本最大級の海岸砂丘の名前は何でしょう？", a: ["鳥取砂丘", "tottri", "鳥取"] },
+        { q: "【社会】EU（欧州連合）の多くの国で共通して使われている通貨の単位は何でしょう？", a: ["ユーロ", "euro", "ゆーろ"] },
+        { q: "【社会】三大ピラミッドやスフィンクスで有名な、北アフリカにある国の名前は何でしょう？", a: ["エジプト", "えじぷと"] },
+        { q: "【社会】日本の国会で、衆議院の任期は何年でしょう？（数字のみで）", a: ["4", "４", "4年"] },
+        { q: "【社会】1914年、サラエボ事件をきっかけに勃発した、世界規模の大きな戦争を第何次世界大戦というでしょう？（数字で）", a: ["1", "１", "第一次", "第1次"] },
+        { q: "【社会】日本が世界に誇る、日本一水深が深い湖（秋田県）は何湖でしょう？", a: ["田沢湖", "たざわこ"] },
+        { q: "【社会】企業が利益の一部を、株を買ってくれた人に分配するお金のことを何というでしょう？", a: ["配当金", "配当", "はいとうきん"] },
+        { q: "【社会】マチュピチュ遺跡などがある、南米の国の名前は何でしょう？", a: ["ペルー", "ぺるー"] },
+        { q: "【社会】日本が世界シェアの上位を占める、自動車や機械などを原材料を輸入して国内で組み立てて輸出する貿易の形態を「（何）貿易」というでしょう？", a: ["加工", "加工貿易"] },
+        { q: "【理科】食塩水において、溶けている食塩のことを「（何）質」というでしょう？", a: ["溶質", "ようしつ"] },
+        { q: "【理科】光が1年間に進む距離を基準とした、天文学で使われる距離の単位は何でしょう？", a: ["光年", "こうねん"] },
+        { q: "【理科】火山岩の組織で、大きな結晶（斑晶）の周りを、細かい粒（石基）が埋めている組織を「（何）組織」というでしょう？", a: ["斑状", "はんじょう"] },
+        { q: "【理科】天秤ばかりを使うとき、薬包紙を敷いてから最初に載せるのは「薬品」と「分銅」のどちらでしょう？", a: ["分銅", "ぶんどう"] },
+        { q: "【理科】気圧の単位で、1気圧はおよそ 1013 （何）ヘクトパスカルでしょう？（カタカナで単位の英語名）", a: ["ヘクトパスカル", "へくとぱすかる"] },
+        { q: "【理科】無脊椎動物のうち、アサリやイカのように、内臓が「外套膜（がいとうまく）」に包まれている仲間を「（何）動物」というでしょう？", a: ["軟体", "軟体動物"] },
+        { q: "【理科】金属が錆びたり、物が燃えたりするときに、物質が酸素と結びつく化学変化を何というでしょう？", a: ["酸化", "さんか"] },
+        { q: "【理科】人間の耳で、音の振動を最初にキャッチして震える、耳の奥にある薄い膜を何というでしょう？", a: ["鼓膜", "こまく"] },
+        { q: "【理科】電流の流れる向きは、プラス極からマイナス極ですが、電流の正体である「電子」が流れる向きはどちらからどちら極でしょう？（「〇から〇」の形式で）", a: ["マイナスからプラス", "マイナス極からプラス極"] },
+        { q: "【理科】水に電流を流して水素と酸素に分けるように、化合物を元の電気や熱で分解することを「（何）分解」というでしょう？", a: ["電気分解", "でんきぶんかい"] },
+        // === 追加分：一般常識 ＆ 面白雑学トリビア（40問） ===
+        { q: "【常識】日本の現在の紙幣（お札）で、千円札の肖像画に描かれている、近代医学の基礎を築いた細菌学者は誰でしょう？", a: ["北里柴三郎", "きたざとしばさぶろう", "北里 柴三郎"] },
+        { q: "【常識】日本の国会議事堂に向かって、右側にあるのが参議院ですが、左側にあるのは何議院でしょう？", a: ["衆議院", "しゅうぎいん"] },
+        { q: "【常識】日本の祝日で、1年の中で一番最初（1月）に訪れる祝日は何でしょう？", a: ["元日", "がんじつ", "元旦"] },
+        { q: "【常識】世界的な環境問題の国際会議。1997年に温室効果ガス削減の目標を定めた議定書といえば、日本の何という都市の名前がついているでしょう？", a: ["京都", "きょうと", "京都議定書"] },
+        { q: "【常識】百円玉や五百円玉など、日本で現在「硬貨（コイン）」を発行している国の機関はどこでしょう？", a: ["政府", "日本政府", "財務省"] },
+        { q: "【常識】インターネットのURLでよく見かける「www」とは、何という英語の略でしょう？（カタカナか英語で）", a: ["ワールドワイドウェブ", "world wide web", "World Wide Web"] },
+        { q: "【常識】日本の地方自治体で、知事や市町村長になることができる年齢（被選挙権）は、満何歳以上でしょう？（知事の場合、数字のみで）", a: ["30", "３０", "30歳"] },
+        { q: "【常識】1年を12ヶ月に分けたとき、大の月（31日まである月）は、全部で何ヶ月あるでしょう？（数字のみで）", a: ["7", "７", "7ヶ月"] },
+        { q: "【常識】「非常口」の誘導標識（緑色の看板）に描かれている人間は、どちらの方向に向かって走っているでしょう？（右・左）", a: ["左", "ひだり"] },
+        { q: "【常識】日本の郵便番号は、ハイフンを除くと全部で何桁の数字で構成されているでしょう？（数字のみで）", a: ["7", "７", "7桁"] },
+        { q: "【雑学】ことわざ「犬も歩けば棒に当たる」がありますが、これの対になる「猫」を使ったことわざ。「猫に（何）」でしょう？", a: ["小判", "こばん"] },
+        { q: "【雑学】トランプのカードで、4つのマーク（スード）のうち、唯一「赤色」ではない黒色のマークは、スペードともう一つは何でしょう？（カタカナで）", a: ["クラブ", "クローバー"] },
+        { q: "【雑学】世界で一番乗降客数（利用客）が多い、ギネス記録にも認定されている日本の鉄道駅はどこでしょう？", a: ["新宿", "しんじゅく", "新宿駅"] },
+        { q: "【雑学】バナナは木になる果物だと思われがちですが、実は植物の分類上は「木」ではなく（何）でしょう？", a: ["草", "多年草", "草本"] },
+        { q: "【雑学】ボウリングで、3回連続でストライクを取ることを「ターキー」といいますが、では2回連続の場合は何というでしょう？（カタカナで）", a: ["ダブル", "だぶる"] },
+        { q: "【雑学】かき氷の定番のシロップ「イチゴ」「メロン」「ブルーハワイ」ですが、実はこれらはすべて（何）が同じでしょう？", a: ["味", "あじ", "中身", "原材料"] },
+        { q: "【雑学】地球上で、最も脳が大きい（重い）生き物は何でしょう？", a: ["マッコウクジラ", "クジラ", "くじら"] },
+        { q: "【雑学】テニスの試合で、点数が「0点」のことを、ある果物に似ていることから英語で何というでしょう？", a: ["ラブ", "love", "らぶ"] },
+        { q: "【雑学】国際宇宙ステーション（ISS）が、地球を1周するのにかかる時間は、およそ何分でしょう？（90分、180分、360分のうちどれか）", a: ["90分", "90", "９０"] },
+        { q: "【雑学】童話『シンデレラ』で、魔法使いが魔法で作った乗り物は「何の馬車」でしょう？", a: ["かぼちゃ", "カボチャ", "南瓜"] },
+        { q: "【雑学】パンダの尻尾（しっぽ）の色は、白と黒のどちらでしょう？", a: ["白", "しろ"] },
+        { q: "【雑学】大相撲の土俵（どひょう）の真ん中には、ある調味料が埋められています。その調味料は何でしょう？", a: ["塩", "しお"] },
+        { q: "【雑学】世界一周を初めて達成した船団を率いた、マゼラン海峡に名前を残す航海家マゼランは、どこの国の出身でしょう？", a: ["ポルトガル", "ぽるとがる"] },
+        { q: "【雑学】エジプトのスフィンクスが見つかったとき、鼻が壊れていました。これを大砲で壊したという伝説がある、フランスの有名な皇帝は誰でしょう？", a: ["ナポレオン", "なぽれおん"] },
+        { q: "【雑学】世界で一番売れた（発行部数が多い）漫画としてギネス記録を持っている、尾田栄一郎先生の作品のタイトルは何でしょう？", a: ["ONE PIECE", "ワンピース", "one piece", "わんぴーす"] },
+        { q: "【雑学】飛行機の「ブラックボックス」と呼ばれる飛行データ記録装置ですが、実際に見つけやすいように何色に塗られているでしょう？", a: ["オレンジ", "オレンジ色", "橙色", "赤"] },
+        { q: "【雑学】マヨネーズを発明したとされる国はどこでしょう？", a: ["フランス", "ふらんす"] },
+        { q: "【雑学】ことわざ「捕らぬ狸の皮算用」がありますが、英語圏で同じ意味の諺では、タヌキではなく何の動物（鳥類）の卵が孵る前に数を数えるなというでしょう？", a: ["ニワトリ", "にわとり", "鶏", "チキン"] },
+        { q: "【雑学】人間が一生の間に流す涙の量は、およそ何リットルと言われているでしょう？（6L、60L、600Lのうちどれか）", a: ["60L", "60", "６０"] },
+        { q: "【雑学】日本の伝統的な楽器「三味線（しゃみせん）」の弦は、全部で何本あるでしょう？（数字のみで）", a: ["3", "３", "3本"] },
+        { q: "【雑学】クジラとイルカの違いは、生物学的には（何）の違いだけで、基本的には同じ仲間でしょう？", a: ["大きさ", "サイズ", "体長"] },
+        { q: "【雑学】鉛筆の芯の濃さを表す「H」は、英語の「Hard（硬い）」の略ですが、「B」は何という英語の略でしょう？", a: ["Black", "black", "ブラック"] },
+        { q: "【雑学】「サハラ砂漠」の「サハラ」とは、現地の言葉（アラビア語）でどういう意味でしょう？", a: ["砂漠", "さばく", "荒野"] },
+        { q: "【雑学】日本独自の文化「数え年」では、生まれた瞬間を何歳とするでしょう？（数字のみで）", a: ["1", "１", "1歳"] },
+        { q: "【雑学】世界で一番多くの島を持つ国は、どこの国でしょう？（スウェーデン、日本、インドネシアのうちどれか）", a: ["スウェーデン", "すうぇーでん"] },
+        { q: "【雑学】音楽の授業でおなじみの「ドレミファソラシド」という音名は、元々どこの国の言葉でしょう？", a: ["イタリア", "イタリア語", "いたりあ"] },
+        { q: "【雑学】サッカーの試合で、1試合に1人の選手が3得点以上決めることを何というでしょう？（カタカナで）", a: ["ハットトリック", "はっととりっく"] },
+        { q: "【雑学】「ギネス世界記録」の「ギネス」とは、元々どこの会社の名前から来ているでしょう？（自動車、ビール、時計のうちどれか）", a: ["ビール", "ビール会社"] },
+        { q: "【雑学】トランプのキング（K）のカードに描かれている4人の王様のうち、唯一「口ひげ」が描かれていないのは、何（ダイヤ、ハート、スペード、クラブ）のキングでしょう？", a: ["ダイヤ", "だいや"] },
+        { q: "【雑学】ことわざ「急がば回れ」の語源となったのは、日本の近畿地方にある日本一大きい（何）を船で渡るエピソードでしょう？", a: ["琵琶湖", "びわこ"] },
+        // === 追加分：5教科 ＆ 常識・面白雑学トリビア（40問） ===
+        { q: "【国語】夏目漱石の小説『吾輩は猫である』で、主人公である猫の飼い主の職業は何でしょう？", a: ["教師", "先生", "中学校教師", "うちの主人"] },
+        { q: "【国語】「気が置けない」の本来の正しい意味は、「気を使う必要がなく、どのような関係」のことでしょう？", a: ["気楽", "遠慮がない", "親しい", "リラックスできる"] },
+        { q: "【国語】ことわざ「捕らぬ狸の皮算用」と同じ意味の四字熟語。「取らぬ（何）の算用」？", a: ["狸", "たぬき"] },
+        { q: "【国語】文章の中で、前の文と後ろの文をつなぎ、因果関係や逆接などを表す「だから」「しかし」などの単語を何というでしょう？", a: ["接続詞", "せつぞくし"] },
+        { q: "【国語】「一姫二太郎」の「一姫」とは、1番目に生まれる子供が（どちら）の性別だと育てやすくて良いという意味でしょう？", a: ["女", "女の子", "女子"] },
+        { q: "【国語】「喧噪（けんそう）」の対義語で、静かでひっそりしている様子を意味する漢字2文字の言葉は何でしょう？", a: ["静寂", "せいじゃく", "閑静"] },
+        { q: "【数学】2つのサイコロを同時に振るとき、出る目の和が「13」になる確率はいくらでしょう？", a: ["0", "ゼロ", "なし"] },
+        { q: "【数学】三角形の3つの頂点から、向かい合う辺に下ろした3本の「垂線」が交わる点を何というでしょう？", a: ["垂心", "すいしん"] },
+        { q: "【数学】 100 ページのノートを 25% だけ使いました。残っているのは何ページでしょう？（数字のみで）", a: ["75", "７５"] },
+        { q: "【数学】反比例のグラフが描く、2つの離れた曲線のことを「（何）曲線」というでしょう？", a: ["双", "双曲線"] },
+        { q: "【数学】 x の値が大きくなると y の値も大きくなる一次関数 y = ax + b において、変化の割合（傾き）である a の符号はプラス・マイなスのどちらでしょう？", a: ["プラス", "正"] },
+        { q: "【数学】円周の長さに対する直径の比（円周率）をギリシャ文字1文字で表すと何でしょう？", a: ["π", "パイ", "pai"] },
+        { q: "【英語】「私たちは英語を勉強します」 We study English. この文を過去形にするとき、study の過去形（スペル）はどうなるでしょう？", a: ["studied"] },
+        { q: "【英語】「私は15歳です」 I am fifteen ( ) old. 空欄に入る5文字の英単語は何でしょう？", a: ["years"] },
+        { q: "【英語】「太陽（sun）」の前に付ける、世界に1つしかないものを指す冠詞は何でしょう？（小文字3文字）", a: ["the"] },
+        { q: "【英語】「～の間に」という意味で、3つ以上のものの間にあるときに使う、Aから始まる5文字の英単語は何でしょう？", a: ["among", "Among"] },
+        { q: "【英語】「家族」を意味する英単語「family」の語源は、「召使い」を意味するラテン語ですが、現在の英語のスペルは何でしょう？", a: ["family", "Family"] },
+        { q: "【英語】「1月（January）」の語源となった、ローマ神話に登場する「始まりと終わり」を司る門の神様の名前は何でしょう？（カタカナで）", a: ["ヤヌス", "ヤヌース"] },
+        { q: "【社会】1543年、種子島に伝来し、その後の日本の戦国時代の戦い方を大きく変えた武器は何でしょう？", a: ["鉄砲", "火縄銃", "てっぽう"] },
+        { q: "【社会】日本の都道府県の中で、一番「海岸線」が長いのはどこでしょう？", a: ["北海道", "ほっかいどう"] },
+        { q: "【社会】南アメリカ大陸のアマゾン川流域などに広がる、世界最大の熱帯雨林のことをカタカナで何というでしょう？", a: ["セルバ", "アマゾン熱帯雨林"] },
+        { q: "【社会】1945年、第二次世界大戦を終結させるために日本が調印した、連合国側からの降伏要求の宣言を何宣言というでしょう？", a: ["ポツダム宣言", "ポツダム"] },
+        { q: "【社会】日本で唯一、一般の乗用車が走ることができない、新幹線やJRの線路だけが通っている本州と北海道を結ぶ海底トンネルは何でしょう？", a: ["青函トンネル", "せいかんとんねる"] },
+        { q: "【社会】世界で一番多くの国と国境を接している国は、ロシアともう一つはどこの国でしょう？", a: ["中国", "ちゅうごく"] },
+        { q: "【理科】化合物質が酸素を失う、または水素と結びつく化学変化（酸化の逆）を何というでしょう？", a: ["還元", "かんげん"] },
+        { q: "【理科】音の「高さ」を決めるのは、音の振動数（ヘルツ）ですが、音の「大きさ」を決めるのは振動の何でしょう？", a: ["振幅", "しんぷく"] },
+        { q: "【理科】気象観測において、1日を通して「10分間隔の平均風速が毎秒15メートル以上」になった日のことを何というでしょう？", a: ["強風日", "突風日ではない"] },
+        { q: "【理科】地震が発生した時、最初にやってくるカタカタという小さな揺れ（初期微動）を伝える波を「何波」というでしょう？（アルファベット1文字）", a: ["P", "P波", "ｐ波"] },
+        { q: "【理科】塩酸と水酸化ナトリウムを混ぜると、互いの性質を打ち消し合う反応が起きます。この反応を何というでしょう？", a: ["中和", "ちゅうわ"] },
+        { q: "【理科】人間の体の中で、最大の「臓器」であり、解毒（げどく）や栄養の蓄え、胆汁の作成などを行う臓器はどこでしょう？", a: ["肝臓", "かんぞう"] },
+        { q: "【常識】日本の119番は火事や救急ですが、海上での事件や事故を通報する際の緊急通報用電話番号は何番でしょう？", a: ["118", "１１８"] },
+        { q: "【常識】日本の道路交通法において、自転車は「歩行者」と「軽車両」のどちらに分類されるでしょう？", a: ["軽車両", "けいしゃりょう"] },
+        { q: "【常識】現在の日本の紙輩（お札）で、五千円札の肖像画に描かれている、日本初の女子留学生であり津田塾大学の創設者は誰でしょう？", a: ["津田梅子", "つだうめこ", "津田 梅子"] },
+        { q: "【常識】世界的なリゾート地「ハワイ」は、どこの国に属しているでしょう？", a: ["アメリカ", "アメリカ合衆国", "USA"] },
+        { q: "【雑学】高級チョコレートなどで有名な「ベルギー」の首都はどこでしょう？", a: ["ブリュッセル", "ぶりゅっせる"] },
+        { q: "【雑学】野球の試合で、バッターが誰もランナーがいない状態でホームランを打つことを、英語の「ソロ」を使って何というでしょう？", a: ["ソロホームラン", "そろほーむらん"] },
+        { q: "【雑学】童話『ピーターパン』に登場する、ピーターパンの相棒である小さな妖精の名前は何でしょう？", a: ["ティンカーベル", "てぃんかーべる"] },
+        { q: "【雑学】オーストラリアの国旗に描かれている動物は、カンガルーともう一種は何でしょう？（鳥類です）", a: ["エミュー", "えみゅー"] },
+        { q: "【雑学】日本の伝統的なカードゲーム「百人一首」の札は、全部で何枚あるでしょう？（数字のみで）", a: ["100", "１百", "100枚"] },
+        { q: "【雑学】オリンピックの金メダルは、実はほとんどが「ある金属」で作られており、表面だけに金がメッキされています。その土台となる金属は何でしょう？", a: ["銀", "ぎん", "シルバー"] },
+        // === ラスト追加分：5教科 ＆ 常識・面白雑学トリビア（20問） ===
+        { q: "【国語】「破天荒（はてんこう）」の本来の正しい意味は、「誰も成し得なかった（何を）すること」でしょう？", a: ["偉業", "大事業", "前人未到の快挙", "新しいこと"] },
+        { q: "【国語】慣用句「（どこ）に水」といえば、物事が非常にスムーズに、滞りなく進む様子を表すでしょう？", a: ["流れる", "流れ", "淀みない"] },
+        { q: "【国語】日本最古の和歌集といえば、何というでしょう？", a: ["万葉集", "まんようしゅう"] },
+        { q: "【数学】2つのサイコロを同時に振るとき、出る目の積（かけ算）が「奇数」になる確率は「何分の1」でしょう？（数字で）", a: ["1/4", "４分の１", "0.25"] },
+        { q: "【数学】関数 y = ax^2 において、 a の値が0より大きい（プラス）とき、グラフの形は「上に凸」「下に凸」のどちらでしょう？", a: ["下に凸", "したにとつ"] },
+        { q: "【数学】1つの円において、中心角の大きさと「扇形の（何）」は比例するでしょう？（面積以外で漢字2文字）", a: ["弧の長さ", "孤の長さ"] },
+        { q: "【英語】「～に到着する」を意味する arrive ( ) の空欄に入る2文字の前置詞は何でしょう？", a: ["at", "At", "in", "In"] },
+        { q: "【英語】「ナイフ」や「ひざ（knee）」のように、最初の「k」を発音しない音のことを「（何）文字」というでしょう？", a: ["黙字", "もくじ", "サイレントレター"] },
+        { q: "【英語】「水（water）」が氷になったものを意味する、Iから始まる3文字の英単語は何でしょう？", a: ["ice", "Ice"] },
+        { q: "【社会】1945年、国際連合が正式に発足した際、本部の置かれたアメリカの都市はどこでしょう？", a: ["ニューヨーク", "にゅーよーく", "New York"] },
+        { q: "【社会】関ヶ原の戦いで西軍を率いた、滋賀県の佐和山城主としても知られる戦国武将は誰でしょう？", a: ["石田三成", "いしだみつなり", "石田 三成"] },
+        { q: "【社会】日本の都道府県の中で、一番数が多く存在する「村（むら）」があるのはどこでしょう？", a: ["長野県", "ながのけん", "長野"] },
+        { q: "【理科】金属を熱したとき、酸化を通り越して一気に液体を飛ばして気体にする、またはその逆の現象を「（何）華」というでしょう？", a: ["昇華", "しょうか"] },
+        { q: "【理科】人間の血液の成分で、体内に侵入した細菌やウイルスをやっつける（免疫）働きをするのは何球でしょう？", a: ["白血球", "はっけっきゅう"] },
+        { q: "【理科】天気図で、等圧線が狭く密集しているところは、風が「強い」「弱い」のどちらでしょう？", a: ["強い", "つよい"] },
+        { q: "【常識】日本の自動車のナンバープレートで、富士山のイラストなどが描かれた、地域振興のために導入されたナンバーを「（何）ナンバー」というでしょう？", a: ["ご当地", "ご当地ナンバー", "地方版図柄入り"] },
+        { q: "【常識】日本の法律で、お酒やタバコを合法的に購入・摂取できるようになるのは満何歳からでしょう？（数字のみで）", a: ["20", "２０", "20歳"] },
+        { q: "【常識】チェスの盤面で、最初から一番多く並んでいる、兵士を表す駒の名前は何でしょう？", a: ["ポーン", "ぽーん", "Pawn"] },
+        { q: "【雑学】トランプのカードで、J、Q、Kの絵札は全部で何枚あるでしょう？（数字のみで）", a: ["12", "１２", "12枚"] },
+        { q: "【雑学】世界で初めて「宇宙飛行」に成功したユーリ・ガガーリンの名言。「地球は（何色）だった」でしょう？", a: ["青", "青かった", "あお"] }
+    ];
+
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        if (type === 'start') {
+            osc.frequency.setValueAtTime(523.25, now);
+            osc.frequency.setValueAtTime(659.25, now + 0.1);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        } else if (type === 'buzzer') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(880, now);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+            osc.start(now);
+            osc.stop(now + 0.3);
+        } else if (type === 'correct') {
+            osc.frequency.setValueAtTime(659.25, now);
+            osc.frequency.setValueAtTime(783.99, now + 0.15);
+            osc.frequency.setValueAtTime(1046.50, now + 0.3);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+            osc.start(now);
+            osc.stop(now + 0.6);
+        } else if (type === 'wrong') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(261.63, now);
+            osc.frequency.setValueAtTime(196.00, now + 0.2);
+            gain.gain.setValueAtTime(0.25, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+    }
+
+    // 部屋に入る処理
+    document.getElementById("connect-btn").addEventListener("click", async () => {
+        const roomId = document.getElementById("room-id").value.trim();
+        const roomPass = document.getElementById("room-pass").value.trim();
+        myName = document.getElementById("username").value.trim();
+        const hostRequested = document.getElementById("is-host-check").checked;
+
+        if(!roomId || !myName) {
+            alert("部屋名とあなたの名前を入力してください");
+            return;
+        }
+
+        roomRef = doc(db, "quiz_rooms", roomId);
+        const snap = await getDoc(roomRef);
+
+        if(snap.exists()) {
+            const data = snap.data();
+            const savedPass = (data.password !== undefined && data.password !== null) ? data.password.toString().trim() : "";
+            
+            // 🔒 合言葉の認証チェック
+            if(savedPass !== roomPass) {
+                alert("部屋のパスワードが違います");
+                return;
+            }
+            
+            isHost = hostRequested;
+            let currentUsers = data.activeUsers || [];
+            if(!currentUsers.includes(myName)) {
+                currentUsers.push(myName);
+                await updateDoc(roomRef, { activeUsers: currentUsers });
+            }
+        } else {
+            // 新規作成時
+            isHost = hostRequested;
+            await setDoc(roomRef, {
+                password: roomPass,
+                state: "ready",
+                mode: "manual",
+                quizText: "ホストが出題するのをお待ちください...",
+                timeLeft: 10,
+                answeredBy: "",
+                currentAnswer: "",
+                activeUsers: [myName],
+                excludedPlayers: [],
+                scores: {},
+                currentAnswersList: [],
+                manualCorrectAnswer: ""
+            });
+        }
+
+        document.getElementById("room-setup-panel").classList.add("hidden");
+        document.getElementById("game-area").classList.remove("hidden");
+        document.getElementById("leave-room-btn").classList.remove("hidden");
+        
+        if(isHost) {
+            document.getElementById("host-view").classList.remove("hidden");
+        } else {
+            document.getElementById("host-view").classList.add("hidden");
+        }
+        document.getElementById("title-text").innerText = `部屋: ${roomId} (${isHost ? '👑ホスト' : '👤プレイヤー'}: ${myName})`;
+
+        startRoomListener();
+    });
+
+    // 退室ボタンの処理
+    document.getElementById("leave-room-btn").addEventListener("click", async () => {
+        if (roomRef) {
+            try {
+                const snap = await getDoc(roomRef);
+                if (snap.exists()) {
+                    let currentUsers = snap.data().activeUsers || [];
+                    currentUsers = currentUsers.filter(u => u !== myName);
+                    await updateDoc(roomRef, { activeUsers: currentUsers });
+                }
+            } catch (e) { console.error(e); }
+        }
+        if (unsubscribeRoom) { unsubscribeRoom(); unsubscribeRoom = null; }
+        if (timerId) { clearInterval(timerId); timerId = null; }
+        isHost = false;
+        document.getElementById("room-setup-panel").classList.remove("hidden");
+        document.getElementById("game-area").classList.add("hidden");
+        document.getElementById("leave-room-btn").classList.add("hidden");
+        document.getElementById("host-view").classList.add("hidden");
+        document.getElementById("title-text").innerText = "🔥 オンラインクイズシステム";
+    });
+
+    function startRoomListener() {
+        unsubscribeRoom = onSnapshot(roomRef, async (snapshot) => {
+            if (!snapshot.exists()) return;
+            const data = snapshot.data();
+            const activeUsers = data.activeUsers || [];
+            const excluded = data.excludedPlayers || [];
+
+            document.getElementById("quiz-text").innerText = data.quizText;
+            document.getElementById("timer-count").innerText = data.timeLeft;
+            
+            const statusBox = document.getElementById("status-box");
+            statusBox.className = "status " + data.state;
+            
+            const buzzerBtn = document.getElementById("buzzer");
+            const answerPanel = document.getElementById("answer-panel");
+            const timerBox = document.getElementById("timer-box");
+            const hostJudgePanel = document.getElementById("host-judge-panel");
+
+            // ⏱️ タイマーおよび画面制御
+            if (data.state === "answering") {
+                timerBox.style.display = "block";
+                buzzerBtn.disabled = true;
+                
+                if (data.answeredBy === myName) {
+                    answerPanel.classList.remove("hidden");
+                } else {
+                    answerPanel.classList.add("hidden");
+                }
+
+                // 手動モードで回答がテキスト送信されたら、ホスト側に判定パネルを出す
+                if (isHost && data.mode === "manual" && data.currentAnswer) {
+                    hostJudgePanel.classList.remove("hidden");
+                    document.getElementById("judge-player-name").innerText = data.answeredBy;
+                    document.getElementById("judge-player-answer").innerText = data.currentAnswer;
+                } else {
+                    hostJudgePanel.classList.add("hidden");
+                }
+
+                // カウントダウン処理（ホストが代表して管理）
+                if (isHost && !timerId) {
+                    let currentSec = data.timeLeft;
+                    timerId = setInterval(async () => {
+                        currentSec--;
+                        if (currentSec <= 0) {
+                            clearInterval(timerId);
+                            timerId = null;
+                            await handleTimeout(data);
+                        } else {
+                            await updateDoc(roomRef, { timeLeft: currentSec });
+                        }
+                    }, 1000);
+                }
+            } else if (data.state === "wait" || data.state === "ready") {
+                if (timerId) { clearInterval(timerId); timerId = null; }
+                timerBox.style.display = "none";
+                answerPanel.classList.add("hidden");
+                hostJudgePanel.classList.add("hidden");
+
+                if (data.state === "ready") {
+                    statusBox.innerText = "出題待機中...";
+                    buzzerBtn.disabled = true;
+                } else {
+                    statusBox.innerText = "問題進行中！早押しボタンを押せます！";
+                    
+                    // モードごとのホストの早押し権限
+                    if (isHost && data.mode === "manual") {
+                        buzzerBtn.disabled = true; // 手動モードのホストは回答不可
+                    } else if (excluded.includes(myName)) {
+                        statusBox.innerText = "あなたは回答済み、またはお休み中（他の人の再押し待機）";
+                        buzzerBtn.disabled = true;
+                    } else {
+                        buzzerBtn.disabled = false; // AIモードのホスト、および未解答のプレイヤーは押せる
+                    }
+                }
+            }
+
+            if (data.state === "result_correct") {
+                if (timerId) { clearInterval(timerId); timerId = null; }
+                statusBox.className = "status correct-banner";
+                statusBox.innerText = `⭕ 正解!! 【${data.answeredBy} さん】が正解しました！ (+1pt)`;
+                answerPanel.classList.add("hidden");
+                hostJudgePanel.classList.add("hidden");
+            } else if (data.state === "result_wrong") {
+                if (timerId) { clearInterval(timerId); timerId = null; }
+                statusBox.className = "status wrong-banner";
+                const displayAns = data.currentAnswer ? data.currentAnswer : "（未入力）";
+                statusBox.innerText = `❌ 不正解... 【${data.answeredBy} さん】の回答 ➔ 「${displayAns}」 (-1pt)`;
+                answerPanel.classList.add("hidden");
+                hostJudgePanel.classList.add("hidden");
+            } else if (data.state === "result_all_wrong") {
+                if (timerId) { clearInterval(timerId); timerId = null; }
+                statusBox.className = "status wrong-banner";
+                const rightAns = data.mode === "ai" ? (data.currentAnswersList ? data.currentAnswersList[0] : "-") : (data.manualCorrectAnswer || "未設定");
+                statusBox.innerText = `🚨 全員不正解（またはタイムアップ）終了！\n【正解： ${rightAns} 】`;
+                answerPanel.classList.add("hidden");
+                hostJudgePanel.classList.add("hidden");
+            }
+
+            // スコアボード描画
+            const scoreRowsDiv = document.getElementById("score-rows");
+            scoreRowsDiv.innerHTML = "";
+            const scores = data.scores || {};
+            for (const player in scores) {
+                if (!activeUsers.includes(player)) continue;
+                const row = document.createElement("div");
+                row.className = "score-row";
+                const pt = scores[player].pt !== undefined ? scores[player].pt : 0;
+                const correct = scores[player].correct || 0;
+                const wrong = scores[player].wrong || 0;
+                row.innerHTML = `<span><b>${player}</b> ${activeUsers[0]===player?'👑':''}</span><span>🪙 ${pt} pt (⭕ ${correct} / ❌ ${wrong})</span>`;
+                scoreRowsDiv.appendChild(row);
+            }
+        });
+    }
+
+    // ⏱️ 10秒制限時間切れ（タイムアップ）時の処理
+    async function handleTimeout(data) {
+        if (!roomRef) return;
+        playSound('wrong');
+        const player = data.answeredBy;
+        
+        let currentScores = data.scores || {};
+        if (player) {
+            if (!currentScores[player]) currentScores[player] = { pt: 0, correct: 0, wrong: 0 };
+            currentScores[player].pt = (currentScores[player].pt || 0) - 1;
+            currentScores[player].wrong = (currentScores[player].wrong || 0) + 1;
+        }
+        
+        const currentExcluded = data.excludedPlayers || [];
+        if (player && !currentExcluded.includes(player)) {
+            currentExcluded.push(player);
+        }
+
+        // 部屋に参加している全員（手動モードの場合はホストを除く参加者）
+        const activeUsers = data.activeUsers || [];
+        const targetsForQuiz = data.mode === "manual" ? activeUsers.filter(u => u !== activeUsers[0]) : activeUsers;
+        const isAllExcluded = targetsForQuiz.every(u => currentExcluded.includes(u));
+
+        if (isAllExcluded || targetsForQuiz.length === 0) {
+            // 全員がタイムアップ、または間違えた場合 ➔ 正解を出して次へ
+            await updateDoc(roomRef, {
+                state: "result_all_wrong",
+                currentAnswer: "（タイムアップ）",
+                scores: currentScores,
+                excludedPlayers: currentExcluded
+            });
+            setTimeout(async () => {
+                if (data.mode === "ai") {
+                    await triggerNextAiQuestion();
+                } else {
+                    await updateDoc(roomRef, { state: "ready", quizText: "ホストの次の出題をお待ちください..." });
+                }
+            }, 4000);
+        } else {
+            // まだ解答していない人がいる場合 ➔ wait状態に戻し、他の人が再押し可能にする
+            await updateDoc(roomRef, {
+                state: "wait",
+                answeredBy: "",
+                currentAnswer: "",
+                timeLeft: 10,
+                scores: currentScores,
+                excludedPlayers: currentExcluded
+            });
+        }
+    }
+
+    // 🤖 AIのランダム次の問題セット
+    async function triggerNextAiQuestion(customPrefix = "") {
+        if(!roomRef || aiQuizDatabase.length === 0) return;
+        const randomQuiz = aiQuizDatabase[Math.floor(Math.random() * aiQuizDatabase.length)];
+        const displayText = customPrefix ? `${customPrefix}\n\n【🤖 AI問題】${randomQuiz.q}` : `【🤖 AI問題】${randomQuiz.q}`;
+        
+        await updateDoc(roomRef, {
+            state: "wait", mode: "ai", answeredBy: "", quizText: displayText,
+            currentAnswer: "", timeLeft: 10, excludedPlayers: [], currentAnswersList: randomQuiz.a
+        });
+        playSound('start');
+    }
+
+    // 早押しボタン
+    document.getElementById("buzzer").addEventListener("click", async () => {
+        playSound('buzzer');
+        await updateDoc(roomRef, { state: "answering", answeredBy: myName, currentAnswer: "", timeLeft: 10 });
+    });
+
+    // 解答記述・送信ボタン
+    document.getElementById("submit-answer-btn").addEventListener("click", async () => {
+        const ans = document.getElementById("text-answer").value.trim();
+        if(!ans) return;
+        
+        document.getElementById("text-answer").value = "";
+        
+        const snap = await getDoc(roomRef);
+        const data = snap.data();
+
+        if (data.mode === "ai") {
+            // AIモード：自動で答え合わせ判定
+            const isCorrect = data.currentAnswersList.some(correctAns => ans.toLowerCase().includes(correctAns.toLowerCase()));
+            let currentScores = data.scores || {};
+            const player = data.answeredBy;
+            if (!currentScores[player]) currentScores[player] = { pt: 0, correct: 0, wrong: 0 };
+
+            if (isCorrect) {
+                playSound('correct');
+                currentScores[player].pt = (currentScores[player].pt || 0) + 1;
+                currentScores[player].correct = (currentScores[player].correct || 0) + 1;
+                await updateDoc(roomRef, { state: "result_correct", scores: currentScores, currentAnswer: ans });
+                setTimeout(async () => { await triggerNextAiQuestion(); }, 4000);
+            } else {
+                playSound('wrong');
+                currentScores[player].pt = (currentScores[player].pt || 0) - 1;
+                currentScores[player].wrong = (currentScores[player].wrong || 0) + 1;
+                
+                const currentExcluded = data.excludedPlayers || [];
+                if (!currentExcluded.includes(player)) currentExcluded.push(player);
+                
+                const activeUsers = data.activeUsers || [];
+                const isAllExcluded = activeUsers.every(u => currentExcluded.includes(u));
+                
+                if (isAllExcluded) {
+                    await updateDoc(roomRef, { state: "result_all_wrong", scores: currentScores, excludedPlayers: currentExcluded, currentAnswer: ans });
+                    setTimeout(async () => { await triggerNextAiQuestion(); }, 4000);
+                } else {
+                    await updateDoc(roomRef, { state: "wait", answeredBy: "", currentAnswer: "", timeLeft: 10, scores: currentScores, excludedPlayers: currentExcluded });
+                }
+            }
+        } else {
+            // 手動モード：一旦データベースに文字列を送り、ホストの採点ボタン待ちにする
+            await updateDoc(roomRef, { currentAnswer: ans });
+        }
+    });
+
+    // 👑 ホスト専用：手動モード「⭕ 正解」ボタン処理
+    document.getElementById("host-correct-btn").addEventListener("click", async () => {
+        const snap = await getDoc(roomRef);
+        const data = snapshotDataFix(snap.data());
+        const player = data.answeredBy;
+        if(!player) return;
+
+        playSound('correct');
+        let currentScores = data.scores || {};
+        if (!currentScores[player]) currentScores[player] = { pt: 0, correct: 0, wrong: 0 };
+        currentScores[player].pt = (currentScores[player].pt || 0) + 1;
+        currentScores[player].correct = (currentScores[player].correct || 0) + 1;
+
+        await updateDoc(roomRef, { state: "result_correct", scores: currentScores });
+        setTimeout(async () => {
+            await updateDoc(roomRef, { state: "ready", quizText: "ホストの次の出題をお待ちください..." });
+        }, 4000);
+    });
+
+    // 👑 ホスト専用：手動モード「❌ 不正解」ボタン処理
+    document.getElementById("host-wrong-btn").addEventListener("click", async () => {
+        const snap = await getDoc(roomRef);
+        const data = snapshotDataFix(snap.data());
+        const player = data.answeredBy;
+        if(!player) return;
+
+        playSound('wrong');
+        let currentScores = data.scores || {};
+        if (!currentScores[player]) currentScores[player] = { pt: 0, correct: 0, wrong: 0 };
+        currentScores[player].pt = (currentScores[player].pt || 0) - 1;
+        currentScores[player].wrong = (currentScores[player].wrong || 0) + 1;
+
+        const currentExcluded = data.excludedPlayers || [];
+        if (!currentExcluded.includes(player)) currentExcluded.push(player);
+
+        const activeUsers = data.activeUsers || [];
+        // ホスト（activeUsers[0]）を除いたプレイヤー全員が間違えたか確認
+        const targetsForQuiz = activeUsers.filter(u => u !== activeUsers[0]);
+        const isAllExcluded = targetsForQuiz.every(u => currentExcluded.includes(u));
+
+        if (isAllExcluded || targetsForQuiz.length === 0) {
+            await updateDoc(roomRef, { state: "result_all_wrong", scores: currentScores, excludedPlayers: currentExcluded });
+            setTimeout(async () => {
+                await updateDoc(roomRef, { state: "ready", quizText: "ホストの次の出題をお待ちください..." });
+            }, 4000);
+        } else {
+            // 他の人が再押しできる状態へ戻す
+            await updateDoc(roomRef, { state: "wait", answeredBy: "", currentAnswer: "", timeLeft: 10, scores: currentScores, excludedPlayers: currentExcluded });
+        }
+    });
+
+    function snapshotDataFix(data) {
+        if(data && data.scores) {
+            for(let p in data.scores) {
+                if(data.scores[p].points !== undefined && data.scores[p].pt === undefined) {
+                    data.scores[p].pt = data.scores[p].points;
+                }
+            }
+        }
+        return data;
+    }
+
+    // 👑 ホスト専用：通常の手動出題ボタン
+    document.getElementById("start-btn").addEventListener("click", async () => {
+        const qText = document.getElementById("custom-quiz-text").value.trim();
+        const rightAns = document.getElementById("custom-quiz-answer").value.trim();
+        if(!qText) {
+            alert("問題文を入力してください");
+            return;
+        }
+        await updateDoc(roomRef, {
+            state: "wait", mode: "manual", answeredBy: "", quizText: `【👤 手動問題】\n${qText}`,
+            currentAnswer: "", timeLeft: 10, excludedPlayers: [], manualCorrectAnswer: rightAns
+        });
+        document.getElementById("custom-quiz-text").value = "";
+        playSound('start');
+    });
+
+    // 👑 ホスト専用：AI自動出題開始ボタン
+    document.getElementById("ai-start-btn").addEventListener("click", async () => {
+        await triggerNextAiQuestion("✨ AI自動出題モードを開始します！");
+    });
+
+    // 強制リセット
+    document.getElementById("reset-btn").addEventListener("click", async () => {
+        if(!roomRef) return;
+        await updateDoc(roomRef, {
+            state: "ready", answeredBy: "", quizText: "ホストが出題するのをお待ちください...",
+            timeLeft: 10, currentAnswer: "", excludedPlayers: [], currentAnswersList: [], manualCorrectAnswer: ""
+        });
+    });
+</script>
+</body>
+</html>7
